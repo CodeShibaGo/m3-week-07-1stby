@@ -7,7 +7,7 @@ import sqlalchemy as sa
 from app import app, db
 from app.forms import LoginForm,RegistrationForm, EditProfileForm
 from app.models import User
-from werkzeug.security import check_password_hash
+from werkzeug.security import check_password_hash, generate_password_hash
 
 
 @app.route('/')
@@ -27,6 +27,30 @@ def index():
     ]
     return render_template('index.html', title='首頁',  posts=posts)
 
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if current_user.is_authenticated:
+        return redirect(url_for('index'))
+    if request.method == 'POST':
+        username = request.form['username']
+        email = request.form['email']
+        password = request.form['password']
+        password2 = request.form['password2']
+        #檢查是否已有相同的username
+        check_user = User.query.filter((User.username == username) | (User.email == email)).first()
+        if check_user:
+            return '使用者已存在!'
+        if password != password2:
+            return '密碼不一樣!!'
+
+        new_user = User(username=username,email = email,password_hash = generate_password_hash(password))
+        db.session.add(new_user)
+        db.session.commit()
+        login_user(new_user)
+        session['logged_in'] = True
+        session['username'] = username
+        return redirect(url_for('index'))
+    return render_template('register.html', title = 'Register', csrf_token=generate_csrf)
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -52,19 +76,7 @@ def logout():
     logout_user()
     return redirect(url_for('index'))
 
-@app.route('/register', methods=['GET', 'POST'])
-def register():
-    if current_user.is_authenticated:
-        return redirect(url_for('index'))
-    form = RegistrationForm()
-    if form.validate_on_submit():
-        user = User(username=form.username.data, email=form.email.data)
-        user.set_password(form.password.data)
-        db.session.add(user)
-        db.session.commit()
-        flash('恭喜，你現在是一名註冊使用者！')
-        return redirect(url_for('login'))
-    return render_template('register.html', title='Register', form=form)
+
 
 @app.route('/user/<username>')
 @login_required
