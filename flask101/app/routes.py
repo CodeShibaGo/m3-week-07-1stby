@@ -43,7 +43,7 @@ def login():
             return redirect(url_for('index'))
         else:
             return 'Invalid username/password'
-    return render_template('login.html', title='Sign In', csrf_token=generate_csrf)
+    return render_template('login.html', title='Log in', csrf_token=generate_csrf)
         
 
 
