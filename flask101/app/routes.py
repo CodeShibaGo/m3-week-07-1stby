@@ -8,7 +8,7 @@ from app import app, db
 from app.forms import LoginForm,RegistrationForm, EditProfileForm
 from app.models import User
 from werkzeug.security import check_password_hash, generate_password_hash
-
+from sqlalchemy import text
 
 @app.route('/')
 @app.route('/index')
@@ -37,19 +37,20 @@ def register():
         password = request.form['password']
         password2 = request.form['password2']
         #檢查是否已有相同的username
-        check_user = User.query.filter((User.username == username) | (User.email == email)).first()
+        sql_query = text("SELECT * FROM User WHERE username = :username or email = :email")
+        result = db.session.execute(sql_query, {'username':username, 'email':email})
+        check_user = result.fetchone()
         if check_user:
-            return '使用者已存在!'
+            flash('使用者以存在')
+            return redirect(url_for('register'))
         if password != password2:
-            return '密碼不一樣!!'
+            flash('密碼不一樣')
+            return redirect(url_for('register'))
 
-        new_user = User(username=username,email = email,password_hash = generate_password_hash(password))
-        db.session.add(new_user)
+        sql_insert = text("INSERT INTO User (username, email, password_hash) VALUES(:username, :email, :password_hash)")
+        db.session.execute(sql_insert, {'username':username, 'email':email, 'password_hash':generate_password_hash(password)})
         db.session.commit()
-        login_user(new_user)
-        session['logged_in'] = True
-        session['username'] = username
-        return redirect(url_for('index'))
+        
     return render_template('register.html', title = 'Register', csrf_token=generate_csrf)
 
 @app.route('/login', methods=['GET', 'POST'])
