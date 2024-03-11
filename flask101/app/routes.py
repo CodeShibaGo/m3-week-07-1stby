@@ -50,7 +50,7 @@ def register():
         sql_insert = text("INSERT INTO User (username, email, password_hash) VALUES(:username, :email, :password_hash)")
         db.session.execute(sql_insert, {'username':username, 'email':email, 'password_hash':generate_password_hash(password)})
         db.session.commit()
-        
+    flash('註冊成功')    
     return render_template('register.html', title = 'Register', csrf_token=generate_csrf)
 
 @app.route('/login', methods=['GET', 'POST'])
