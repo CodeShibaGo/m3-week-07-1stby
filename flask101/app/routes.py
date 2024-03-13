@@ -61,13 +61,17 @@ def login():
         username = request.form['username']
         password = request.form['password']
         user = db.session.query(User).filter_by(username=username).first()
+        
+
         if user and check_password_hash(user.password_hash, password):
             login_user(user)
             session['logged_in'] = True
             session['username'] = username
             return redirect(url_for('index'))
         else:
-            return 'Invalid username/password'
+            flash('密碼錯誤')
+            return redirect(url_for('login'))
+        
     return render_template('login.html', title='Log in', csrf_token=generate_csrf)
         
 
@@ -82,7 +86,7 @@ def logout():
 @app.route('/user/<username>')
 @login_required
 def user(username):
-    user = db.first_or_404(sa.select(User).where(User.username == username))
+    user = db.first_or_404(sqlalchemy.select(User).where(User.username == username))
     posts = [
         {'author': user, 'body': '今天天氣真好 '},
         {'author': user, 'body': '好想吃火鍋 '}
