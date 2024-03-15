@@ -1,0 +1,22 @@
+[tool.poetry]
+name = "flask101"
+version = "0.1.0"
+description = ""
+authors = ["1stby <love970120@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.12"
+flask-login = "^0.6.3"
+flask-sqlalchemy = "^3.1.1"
+flask-migrate = "^4.0.5"
+python-dotenv = "^1.0.1"
+pymysql = "^1.1.0"
+flask-wtf = "^1.2.1"
+sqlalchemy = "^2.0.28"
+cryptography = "^42.0.5"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
