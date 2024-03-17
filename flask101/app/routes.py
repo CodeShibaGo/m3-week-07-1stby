@@ -5,7 +5,7 @@ from flask_login import login_user, logout_user, current_user, login_required
 from flask_wtf.csrf import generate_csrf
 import sqlalchemy as sa
 from app import app, db
-from app.forms import LoginForm,RegistrationForm, EditProfileForm
+from app.forms import LoginForm, RegistrationForm, EditProfileForm, EmptyForm
 from app.models import User
 from werkzeug.security import check_password_hash, generate_password_hash
 from sqlalchemy import text
@@ -36,22 +36,26 @@ def register():
         email = request.form['email']
         password = request.form['password']
         password2 = request.form['password2']
+
         #檢查是否已有相同的username
-        sql_query = text("SELECT * FROM User WHERE username = :username or email = :email")
-        result = db.session.execute(sql_query, {'username':username, 'email':email})
-        check_user = result.fetchone()
+        check_user = User.query.filter((User.username == username) | (User.email == email)).first()
         if check_user:
-            flash('使用者以存在')
-            return redirect(url_for('register'))
-        if password != password2:
-            flash('密碼不一樣')
+            flash('使用者已存在')
             return redirect(url_for('register'))
 
-        sql_insert = text("INSERT INTO User (username, email, password_hash) VALUES(:username, :email, :password_hash)")
-        db.session.execute(sql_insert, {'username':username, 'email':email, 'password_hash':generate_password_hash(password)})
+        if password != password2:
+            flash('密碼不一致')
+            return redirect(url_for('register'))
+
+        # 創建新使用者
+        new_user = User(username=username, email=email)
+        new_user.set_password(password)
+        db.session.add(new_user)
         db.session.commit()
-    flash('註冊成功')    
-    return render_template('register.html', title = 'Register', csrf_token=generate_csrf)
+        flash('註冊成功')    
+        return redirect(url_for('login'))
+
+    return render_template('register.html', title='Register', csrf_token=generate_csrf())
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -86,12 +90,13 @@ def logout():
 @app.route('/user/<username>')
 @login_required
 def user(username):
-    user = db.first_or_404(sqlalchemy.select(User).where(User.username == username))
+    user = db.first_or_404(sa.select(User).where(User.username == username))
     posts = [
         {'author': user, 'body': '今天天氣真好 '},
         {'author': user, 'body': '好想吃火鍋 '}
     ]
-    return render_template('user.html', user=user, posts=posts)
+    form = EmptyForm()
+    return render_template('user.html', user=user, posts=posts, form=form)
 
 @app.before_request
 def before_request():
@@ -113,3 +118,43 @@ def edit_profile():
         form.username.data = current_user.username
         form.about_me.data = current_user.about_me
     return render_template('edit_profile.html', title='Edit Profile',form=form)
+
+@app.route('/follow/<username>', methods=['POST'])
+@login_required
+def follow(username):
+    form = EmptyForm()
+    if form.validate_on_submit():
+        user = db.session.scalar(
+            sa.select(User).where(User.username == username))
+        if user is None:
+            flash(f'User {username} not found.')
+            return redirect(url_for('index'))
+        if user == current_user:
+            flash('You cannot follow yourself!')
+            return redirect(url_for('user', username=username))
+        current_user.follow(user)
+        db.session.commit()
+        flash(f'You are following {username}!')
+        return redirect(url_for('user', username=username))
+    else:
+        return redirect(url_for('index'))
+
+@app.route('/unfollow/<username>', methods=['POST'])
+@login_required
+def unfollow(username):
+    form = EmptyForm()
+    if form.validate_on_submit():
+        user = db.session.scalar(
+            sa.select(User).where(User.username == username))
+        if user is None:
+            flash(f'User {username} not found.')
+            return redirect(url_for('index'))
+        if user == current_user:
+            flash('You cannot unfollow yourself!')
+            return redirect(url_for('user', username=username))
+        current_user.unfollow(user)
+        db.session.commit()
+        flash(f'You are not following {username}.')
+        return redirect(url_for('user', username=username))
+    else:
+        return redirect(url_for('index'))

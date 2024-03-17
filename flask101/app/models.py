@@ -9,10 +9,13 @@ import sqlalchemy as sa
 import sqlalchemy.orm as so
 
 
-followers = db.Table(
+followers = sa.Table(
     'followers',
-    db.Column('follower_id', db.Integer, db.ForeignKey('user.id'), primary_key=True),
-    db.Column('followed_id', db.Integer, db.ForeignKey('user.id'), primary_key=True)
+    db.metadata,
+    sa.Column('follower_id', sa.Integer, sa.ForeignKey('user.id'),
+              primary_key=True),
+    sa.Column('followed_id', sa.Integer, sa.ForeignKey('user.id'),
+              primary_key=True)
 )
 
 class User(UserMixin, db.Model):
@@ -25,17 +28,14 @@ class User(UserMixin, db.Model):
 
     posts = relationship('Post', back_populates='author')
 
-    following = db.relationship(
-        'User',secondary=followers,
-        primaryjoin=(followers.c.followed_id == id),
+    following: so.WriteOnlyMapped['User'] = so.relationship(
+        secondary=followers, primaryjoin=(followers.c.follower_id == id),
         secondaryjoin=(followers.c.followed_id == id),
-        back_populates = 'followers')
-
-    followers = db.relationship(
-        'User', secondary=followers,
-        primaryjoin=(followers.c.followed_id == id),
-        secondaryjoin=(followers.c.followed_id == id),
-        back_populates = 'following')
+        back_populates='followers')
+    followers: so.WriteOnlyMapped['User'] = so.relationship(
+        secondary=followers, primaryjoin=(followers.c.followed_id == id),
+        secondaryjoin=(followers.c.follower_id == id),
+        back_populates='following')
 
     def __repr__(self):
         return '<User {}>'.format(self.username)
@@ -61,6 +61,7 @@ class User(UserMixin, db.Model):
     def is_following(self, user):
         query = self.following.select().where(User.id == user.id)
         return db.session.scalar(query) is not None
+
 
     def followers_count(self):
         query = sa.select(sa.func.count()).select_from(
