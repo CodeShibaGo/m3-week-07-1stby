@@ -5,41 +5,124 @@ from flask_login import login_user, logout_user, current_user, login_required
 from flask_wtf.csrf import generate_csrf
 import sqlalchemy as sa
 from app import app, db
-from app.forms import LoginForm, RegistrationForm, EditProfileForm, EmptyForm
-from app.models import User
+from app.forms import LoginForm, RegistrationForm, EditProfileForm, EmptyForm, PostForm
+from app.models import User, Post
 from werkzeug.security import check_password_hash, generate_password_hash
 from sqlalchemy import text
 
-@app.route('/')
-@app.route('/index')
+@app.route('/', methods=['GET', 'POST'])
+@app.route('/index', methods=['GET', 'POST'])
 @login_required
 def index():
-    user = {'username': 'Toby'}
-    posts = [
-        {
-            'author': {'username': 'John'},
-            'body': 'Portland 的天氣真好！'
-        },
-        {
-            'author': {'username': 'Susan'},
-            'body': '復仇者聯盟電影真的很酷！'
+    form = PostForm()
+    if form.validate_on_submit():
+        post_body = form.post.data
+        user_id = current_user.id
+        timestamp = datetime.now(timezone.utc)
+        sql = text("INSERT INTO post (body, user_id, timestamp)  VALUES (:body, :user_id, :timestamp)")
+        db.session.execute(sql, {'body': post_body, 'user_id': user_id, 'timestamp':timestamp})
+        db.session.commit()
+        flash('你的貼文現在已發布！')
+        return redirect(url_for('index'))
+    
+    page = request.args.get('page', 1, type=int)
+    per_page = app.config['POSTS_PER_PAGE']
+    offset = (page - 1) * per_page
+
+    sql = text("""
+        SELECT * FROM post
+        JOIN followers ON followers.followed_id = post.user_id
+        JOIN user ON user.id = post.user_id
+        WHERE followers.followed_id = :current_user_id
+        ORDER BY post.timestamp DESC
+        LIMIT :per_page OFFSET :offset
+    """)
+    result = db.session.execute(sql, {'current_user_id': current_user.id, 'per_page': per_page, 'offset': offset})
+
+    posts = []
+    for row in result:
+        post = {
+            'id': row.id,
+            'body': row.body,
+            'timestamp': row.timestamp,
+            'user_id': row.user_id,
+            'author': {'username': row.username}
         }
-    ]
-    return render_template('index.html', title='首頁',  posts=posts)
+        posts.append(post)
+
+    sql_count = text("""
+        SELECT COUNT(*) FROM post
+        JOIN followers ON followers.followed_id = post.user_id
+        WHERE followers.follower_id = :current_user_id
+    """)
+    total_posts = db.session.execute(sql_count, {'current_user_id': current_user.id}).scalar()
+
+    has_next = page * per_page < total_posts
+    has_prev = page > 1
+    next_url = url_for('index', page=page+1) if has_next else None
+    prev_url = url_for('index', page=page-1) if has_prev else None
+
+    return render_template('index.html', title='首頁', form=form,
+                           posts=posts, next_url=next_url, prev_url=prev_url)
+
+@app.route('/explore')
+@login_required
+def explore():
+    page = request.args.get('page', 1, type=int)
+    per_page = app.config['POSTS_PER_PAGE']
+    offset = (page - 1) * per_page
+
+    sql = text("""
+        SELECT * FROM post
+        JOIN user ON post.user_id = user.id
+        ORDER BY post.timestamp DESC
+        LIMIT :per_page OFFSET :offset
+    """)
+    result = db.session.execute(sql, {'per_page': per_page, 'offset': offset})
+
+    posts = []
+    for row in result:
+        post = {
+            'id': row.id,
+            'body': row.body,
+            'timestamp': row.timestamp,
+            'user_id': row.user_id,
+            'author': {
+                'username': row.username,
+                'avatar': lambda size: User(email=row.email).avatar(size)  # 調用 User 模型的 avatar 方法生成頭像URL
+            }
+        }
+        posts.append(post)
+
+    sql_count = text("""
+        SELECT COUNT(*) FROM post
+    """)
+    total_posts = db.session.execute(sql_count).scalar()
+
+    has_next = page * per_page < total_posts
+    has_prev = page > 1
+    next_url = url_for('explore', page=page+1) if has_next else None
+    prev_url = url_for('explore', page=page-1) if has_prev else None
+
+    return render_template('index.html', title='探索', posts=posts,
+                           next_url=next_url, prev_url=prev_url)
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     if current_user.is_authenticated:
         return redirect(url_for('index'))
+        
     if request.method == 'POST':
         username = request.form['username']
         email = request.form['email']
         password = request.form['password']
         password2 = request.form['password2']
 
-        #檢查是否已有相同的username
-        check_user = User.query.filter((User.username == username) | (User.email == email)).first()
-        if check_user:
+        #檢查是否有相同的 username or email
+        sql = text('SELECT * FROM user WHERE username = :username OR email = :email')
+        result = db.session.execute(sql, {'username':username, 'email':email}).fetchone()
+
+        if result:
             flash('使用者已存在')
             return redirect(url_for('register'))
 
@@ -48,10 +131,11 @@ def register():
             return redirect(url_for('register'))
 
         # 創建新使用者
-        new_user = User(username=username, email=email)
-        new_user.set_password(password)
-        db.session.add(new_user)
+        hashed_password = generate_password_hash(password)
+        sql = text('INSERT INTO user (username, email, password_hash) VALUES (:username, :email, :password_hash)')
+        db.session.execute(sql, {'username': username, 'email': email, 'password_hash': hashed_password})  
         db.session.commit()
+
         flash('註冊成功')    
         return redirect(url_for('login'))
 
@@ -61,21 +145,33 @@ def register():
 def login():
     if current_user.is_authenticated:
         return redirect(url_for('index'))
+    
     if request.method == 'POST':
         username = request.form['username']
         password = request.form['password']
-        user = db.session.query(User).filter_by(username=username).first()
-        
 
-        if user and check_password_hash(user.password_hash, password):
-            login_user(user)
-            session['logged_in'] = True
-            session['username'] = username
-            return redirect(url_for('index'))
+        sql = text("SELECT * FROM user WHERE username = :username LIMIT 1")
+        result = db.session.execute(sql, {'username':username}).fetchone()
+        
+        if result:
+            user = User(
+                id=result.id,
+                username=result.username,
+                email=result.email,
+                password_hash=result.password_hash
+            )
+            if check_password_hash(user.password_hash, password):
+                login_user(user)
+                session['logged_in'] = True
+                session['username'] = username
+                return redirect(url_for('index'))
+            else:
+                flash('密碼錯誤')
+                return redirect(url_for('login'))
         else:
             flash('密碼錯誤')
             return redirect(url_for('login'))
-        
+
     return render_template('login.html', title='Log in', csrf_token=generate_csrf)
         
 
@@ -86,17 +182,40 @@ def logout():
     return redirect(url_for('index'))
 
 
-
 @app.route('/user/<username>')
 @login_required
 def user(username):
-    user = db.first_or_404(sa.select(User).where(User.username == username))
-    posts = [
-        {'author': user, 'body': '今天天氣真好 '},
-        {'author': user, 'body': '好想吃火鍋 '}
-    ]
+    sql_user = text("SELECT * FROM user WHERE username = :username")
+    user = db.session.execute(sql_user, {'username': username}).fetchone()
+    
+    if user is None:
+        return render_template('404.html'), 404
+    
+    page = request.args.get('page', 1, type=int)
+    per_page = app.config['POSTS_PER_PAGE']
+    offset = (page - 1) * per_page
+    
+    sql = text("""
+        SELECT * FROM post 
+        JOIN user ON post.user_id = user.id
+        WHERE post.user_id = :user_id
+        ORDER BY timestamp DESC
+        LIMIT :per_page OFFSET :offset
+    """)
+    posts = db.session.execute(sql, {'user_id': user.id, 'per_page': per_page, 'offset': offset})
+    
+    sql_count = text("SELECT COUNT(*) FROM post WHERE user_id = :user_id")
+    total_posts = db.session.execute(sql_count, {'user_id': user.id}).scalar()
+    
+    has_next = page * per_page < total_posts
+    has_prev = page > 1
+    next_url = url_for('user', username=username, page=page+1) if has_next else None
+    prev_url = url_for('user', username=username, page=page-1) if has_prev else None
+    
     form = EmptyForm()
-    return render_template('user.html', user=user, posts=posts, form=form)
+    return render_template('user.html', user=user, posts=posts,
+                           next_url=next_url, prev_url=prev_url, form=form)
+
 
 @app.before_request
 def before_request():
@@ -139,6 +258,7 @@ def follow(username):
     else:
         return redirect(url_for('index'))
 
+
 @app.route('/unfollow/<username>', methods=['POST'])
 @login_required
 def unfollow(username):
@@ -158,3 +278,4 @@ def unfollow(username):
         return redirect(url_for('user', username=username))
     else:
         return redirect(url_for('index'))
+    

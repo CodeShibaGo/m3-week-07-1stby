@@ -62,7 +62,6 @@ class User(UserMixin, db.Model):
         query = self.following.select().where(User.id == user.id)
         return db.session.scalar(query) is not None
 
-
     def followers_count(self):
         query = sa.select(sa.func.count()).select_from(
             self.followers.select().subquery())
