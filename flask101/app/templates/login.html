@@ -11,6 +11,11 @@
         <input type="password" name="password" id="password" placeholder="password" required>
         <button type="submit">Log in</button>
         <p><a href="{{ url_for('register') }}">Register!</a></p>
+        <p>
+            忘記你的密碼了嗎？<br>
+            <a href="{{ url_for('reset_password_request') }}"> 點擊這裡重設 </a>
+        </p>
     </form>
+
 </div>
 {% endblock %}
