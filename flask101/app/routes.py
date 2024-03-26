@@ -47,7 +47,10 @@ def index():
             'body': row.body,
             'timestamp': row.timestamp,
             'user_id': row.user_id,
-            'author': {'username': row.username}
+            'author': {
+                'username': row.username,
+                'avatar': User(email=row.email).avatar(36) 
+            }
         }
         posts.append(post)
 
@@ -90,7 +93,7 @@ def explore():
             'user_id': row.user_id,
             'author': {
                 'username': row.username,
-                'avatar': lambda size: User(email=row.email).avatar(size)  # 調用 User 模型的 avatar 方法生成頭像URL
+                'avatar': User(email=row.email).avatar(36)  # 調用 User 模型的 avatar 方法生成頭像URL
             }
         }
         posts.append(post)
@@ -170,7 +173,7 @@ def login():
                 flash('密碼錯誤')
                 return redirect(url_for('login'))
         else:
-            flash('密碼錯誤')
+            flash('使用者名稱不存在')
             return redirect(url_for('login'))
 
     return render_template('login.html', title='Log in', csrf_token=generate_csrf)
