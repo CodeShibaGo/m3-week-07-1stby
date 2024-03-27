@@ -1,2 +1,8 @@
 .venv
 **/__pycache__/
+.idea
+
+
+flask101/migrations/script.py.mako
+flask101/migrations/env.py
+flask101/migrations/alembic.ini
